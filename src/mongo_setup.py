@@ -16,7 +16,7 @@ def init_mongo():
                 db.create_collection(col_name)
         
         # Unique Index على order_id في orders_validated (متطلب إلزامي للـ Idempotency)
-        db[COLLECTION_VALIDATED].create_index([("order_id", 1)], unique=True)
+        db[COLLECTION_VALIDATED].create_index([("order_id", 1)], unique=True, name="uniq_order_id")
         
         # الفهارس المساعدة لسرعة الاستعلام
         db[COLLECTION_RAW].create_index([("run_id", 1)])

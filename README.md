@@ -1,179 +1,152 @@
-"file_size_mb"| حجم الملف
-"engine_used"| المحرك المستخدم
-"rows_read"| عدد السجلات المقروءة
-"raw_loaded"| السجلات التي وصلت إلى Raw
-"valid_count"| السجلات السليمة
-"corrected_count"| السجلات المصححة
-"quarantine_count"| السجلات المعزولة
-"elapsed_seconds"| زمن التنفيذ
-"throughput"| معدل المعالجة
-"count_inserted"| السجلات الجديدة
-"count_updated"| السجلات التي تم تحديثها
-"count_unchanged"| السجلات التي لم تتغير
+# Hybrid Big Data Pipeline — Final Phase
 
-وتُستخدم هذه البيانات لاحقًا لتحليل أداء Python Batch وPySpark.
+هذا المستودع هو **استكمال للمشروع النصفي داخل نفس المشروع**. المتطلبات النهائية تضيف 7 درجات فقط: Queries/Indexes/Explain، Aggregations، Materialized Views، Scheduled Jobs، FastAPI موحدة، وتحديث README/GitHub.
 
-«ملاحظة: يتم وضع الأرقام النهائية هنا بعد اكتمال تشغيل المشروع فعليًا، حتى تكون النتائج موثقة من جهاز التنفيذ وليست أرقامًا افتراضية.»
+## 1. المتطلبات الجديدة المنفذة
 
----
+### Queries + Indexes + Explain
+- 5 استعلامات عملية في `src/final_queries.py`.
+- 3 فهارس على الأقل، منها Compound Index:
+  - `idx_customer_id`
+  - `idx_order_date`
+  - `idx_city_status_compound`
+- `executionStats` للمقارنة قبل وبعد الفهارس عبر `/explain/{name}`.
 
-🛠 6. قواعد جودة البيانات
+### Aggregation Reports
+خمسة تقارير مستقلة:
+1. `sales_by_city`
+2. `top_products`
+3. `top_customers`
+4. `sales_by_period`
+5. `orders_by_status`
 
-من أمثلة القواعد المستخدمة:
+### Materialized Views
+- `daily_sales_summary`
+- `top_products_summary`
 
-- "DATE_STANDARDIZED" — توحيد صيغة التاريخ.
-- "CURRENCY_NORMALIZED" — توحيد العملة.
-- "ARABIC_DIGIT_CONVERSION" — تحويل الأرقام العربية إلى أرقام لاتينية.
-- "PRICE_PARSER" — معالجة صيغ الأسعار.
-- "PHONE_SANITIZATION" — تنظيف وتوحيد أرقام الهاتف.
-- "EMAIL_SYNTAX_REPAIR" — إصلاح الأخطاء الواضحة في البريد.
-- "FATAL_CORRUPTION_ISOLATION" — عزل الأخطاء الجوهرية.
-- قواعد Trim وتوحيد القيم المعروفة.
+يتم أول مرة بناء الملخصات، وبعدها تستخدم آلية watermark وdelta لتحديث الجزء المتأثر بدل إعادة بناء كل البيانات في كل تشغيل.
 
----
+### Scheduled Jobs
+مهمتان يوميتان:
+- `daily_sales_summary`
+- `top_products_summary`
 
-📸 7. أدلة التشغيل
+يمكن تشغيل كل مهمة يدويًا أثناء المناقشة، ويتم تسجيل البداية والنهاية والحالة في نتيجة التنفيذ المعادة من الـAPI، مع استمرار السجل في MongoDB من خلال سجل التشغيل.
 
-سيتم وضع لقطات الشاشة الناتجة من التشغيل الفعلي داخل:
+### FastAPI
+تشغيل:
+```bash
+uvicorn src.api:app --reload
+```
 
-reports/screenshots/
+Swagger:
+`http://127.0.0.1:8000/docs`
 
-1. تشغيل العينة باستخدام Python Batch
+Endpoints المطلوبة:
+- `GET /health`
+- `POST /ingest`
+- `GET /indexes`
+- `POST /indexes`
+- `GET /queries`
+- `GET /queries/{name}`
+- `GET /aggregations`
+- `GET /aggregations/{name}`
+- `POST /refresh-mv`
+- `POST /jobs`
+- `POST /jobs/{name}/run`
 
-reports/screenshots/python_batch_result.png
+`POST /ingest` يعيد استخدام Router والـPipeline الموجودين في المشروع النصفي، ولا ينشئ مسار إدخال جديد.
 
-يظهر فيها حجم الملف، المحرك المختار، الدفعات، الزمن ومعدل المعالجة.
+## 2. التثبيت
 
-2. إثبات نتائج MongoDB
-
-reports/screenshots/mongo_collections.png
-
-وتوضح Collections:
-
-orders_raw
-orders_validated
-orders_quarantine
-
-3. سجل مصحح مع Audit Trail
-
-reports/screenshots/validated_sample.png
-
-4. سجل معزول مع سبب العزل
-
-reports/screenshots/quarantine_sample.png
-
-5. نتائج PySpark
-
-reports/screenshots/spark_result.png
-
-6. Spark UI
-
-reports/screenshots/spark_ui.png
-
-وتُستخدم لإظهار Jobs وStages وTasks وPartitions أثناء تشغيل الملف الكبير، وفق متطلبات العرض العملي.
-
-7. اختبار Idempotency وUpsert
-
-reports/screenshots/idempotency_test.png
-
-ويظهر إعادة تشغيل نفس البيانات وعدم إنشاء سجلات Business مكررة.
-
----
-
-💻 8. طريقة التشغيل
-
-تثبيت المتطلبات
-
+```bash
+python -m venv .venv
+.venv\\Scripts\\activate
 pip install -r requirements.txt
+```
 
-إنشاء عينة من الملف الكبير
+انسخ `example.env` إلى `.env` وعدّل القيم عند الحاجة، بدون وضع أي بيانات سرية حقيقية في GitHub.
 
-python src/create_small_sample.py --input data/orders_huge_mixed_quality.csv --rows 100000
+## 3. تشغيل المشروع النصفي
 
-تشغيل العينة
-
+```bash
 python src/main.py --file data/sample_orders.csv
+```
 
-تشغيل الملف الكبير
+## 4. تهيئة فهارس المرحلة النهائية
 
-python src/main.py --file data/orders_huge_mixed_quality.csv
+```bash
+python -c "from src.final_queries import create_indexes; print(create_indexes())"
+```
 
-فحص MongoDB
+## 5. تشغيل API
 
-python check_mongo.py
+```bash
+uvicorn src.api:app --host 127.0.0.1 --port 8000
+```
 
-تشغيل الاختبارات
+ثم افتح `/docs`.
 
-pytest
+## 6. أمثلة للاختبار
 
----
+إنشاء الفهارس:
+```bash
+curl -X POST http://127.0.0.1:8000/indexes
+```
 
-📁 9. بنية المشروع
+قائمة الاستعلامات:
+```bash
+curl http://127.0.0.1:8000/queries
+```
 
-piplineBigData/
-│
-├── README.md
-├── requirements.txt
-│
-├── config/
-│   └── settings.py
-│
-├── data/
-│   ├── orders_huge_mixed_quality.csv
-│   └── sample_orders.csv
-│
-├── src/
-│   ├── main.py
-│   ├── file_router.py
-│   ├── create_small_sample.py
-│   ├── batch_loader.py
-│   ├── spark_loader.py
-│   ├── quality_rules.py
-│   ├── elt_pipeline.py
-│   ├── incremental_loader.py
-│   ├── mongo_setup.py
-│   └── metrics.py
-│
-├── tests/
-│   ├── test_cleaning_rules.py
-│   └── test_classification.py
-│
-├── reports/
-│   ├── results.json
-│   └── screenshots/
-│
-└── docs/
-    └── architecture.md
+تشغيل استعلام عميل:
+```bash
+curl "http://127.0.0.1:8000/queries/customer_orders?customer_id=CUST-500"
+```
 
----
+تشغيل تقرير تجميعي:
+```bash
+curl http://127.0.0.1:8000/aggregations/sales_by_city
+```
 
-🎯 10. الهدف من التنفيذ
+تحديث الـMaterialized Views:
+```bash
+curl -X POST http://127.0.0.1:8000/refresh-mv
+```
 
-لا يقتصر الهدف على نقل البيانات من ملف CSV إلى MongoDB، وإنما بناء خط بيانات يمكنه:
+تشغيل مهمة يدويًا:
+```bash
+curl -X POST http://127.0.0.1:8000/jobs/daily_sales_summary/run
+```
 
-- اختيار محرك المعالجة المناسب حسب حجم البيانات.
-- المحافظة على السجلات الأصلية.
-- تطبيق قواعد جودة واضحة.
-- توثيق عمليات التصحيح.
-- عزل السجلات غير القابلة للتصحيح.
-- قياس أداء المعالجة.
-- إعادة التشغيل بأمان دون إنشاء تكرارات.
-- توفير نتائج يمكن تحليلها وتوثيقها.
+Explain قبل وبعد الفهرس:
+```bash
+curl "http://127.0.0.1:8000/explain/customer_orders?customer_id=CUST-500"
+```
 
-وهذه هي الفكرة الأساسية للمشروع كما وردت في التكليف: بناء خط بيانات يمكن تفسير قراراته وتتبع سجلاته وقياس أدائه وعدم فقدان البيانات السيئة.
+## 7. ملاحظات الاختبار
 
----
+- لا يعتمد الكود على اسم ملف تدريب ثابت أو عدد سجلات ثابت.
+- البيانات المصدرية تستمر في المرور عبر `orders_raw` ثم الـELT النصفي.
+- الـAPI طبقة تشغيل واختبار للوظائف الأصلية، وليست Backend منفصلًا.
+- الـDashboard غير مطلوب.
 
-👩‍💻 إعداد
+## 8. بنية الإضافات
 
-رحاب بشير الخطيب
-
-جامعة الرازي — كلية الحاسوب وتكنولوجيا المعلومات
-
-بكالوريوس ذكاء اصطناعي — المستوى الرابع
-
-مقرر البيانات الضخمة - العملي
-
-إشراف: م. عمر أبوسند
-
----
+```text
+src/
+├── final_queries.py
+├── aggregations.py
+├── materialized_views.py
+├── scheduled_jobs.py
+├── api.py
+├── final_common.py
+├── ... ملفات المشروع النصفي ...
+config/
+└── settings.py
+tests/
+└── test_final_features.py
+requirements.txt
+example.env
+README.md
+```

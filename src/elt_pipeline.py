@@ -1,7 +1,10 @@
 import sys
 import os
 import time
+import hashlib
+import json
 from pymongo import MongoClient, UpdateOne
+from datetime import datetime, timezone
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import MONGO_URI, DB_NAME, COLLECTION_RAW, COLLECTION_VALIDATED, COLLECTION_QUARANTINE, ELT_CHUNK_SIZE
@@ -44,11 +47,25 @@ def process_elt_transformation(run_id, batch_chunk_size=ELT_CHUNK_SIZE):
             else:
                 count_corrected += 1
             
-            # Idempotent Upsert بناءً على order_id
+            # Final-phase fields: parsed items for aggregations and a stable content hash.
+            try:
+                parsed_items = json.loads(data.get("items_json", "[]")) if isinstance(data.get("items_json"), str) else data.get("items_json", [])
+            except Exception:
+                parsed_items = []
+            data["items_parsed"] = parsed_items if isinstance(parsed_items, list) else [parsed_items]
+            stable_payload = json.dumps({k: v for k, v in data.items() if k not in {"quality_status", "corrections"}}, ensure_ascii=False, sort_keys=True, default=str)
+            content_version = hashlib.sha256(stable_payload.encode("utf-8")).hexdigest()
+            operation_time = datetime.now(timezone.utc).isoformat()
+            existing = valid_col.find_one({"order_id": data["order_id"]}, {"content_version": 1, "updated_at": 1})
+            if existing and existing.get("content_version") == content_version:
+                data["updated_at"] = existing.get("updated_at", operation_time)
+            else:
+                data["updated_at"] = operation_time
+            data["content_version"] = content_version
             valid_bulk_ops.append(
                 UpdateOne(
                     {"order_id": data["order_id"]},
-                    {"$set": data},
+                    {"$set": data, "$setOnInsert": {"created_at": operation_time}},
                     upsert=True
                 )
             )
